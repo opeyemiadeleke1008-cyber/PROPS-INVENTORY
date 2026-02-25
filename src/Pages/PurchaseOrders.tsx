@@ -45,7 +45,7 @@ const getDocLogo = async () => {
     }
     image.onerror = () => reject(new Error('Could not load logo image'))
     image.src = '/img/propsandshopslogo.png'
-    image.classList.add('w-25', 'h-20')
+    image.classList.add('w-25', 'h-20', 'object-contain')
   })
 
   return logoLoadPromise
@@ -500,7 +500,7 @@ export default function PurchaseOrders() {
                             </button>
                           )}
 
-                          {order.fulfillmentType === 'delivery' && (
+                          {order.fulfillmentType === 'delivery' && order.paid && (
                             <button
                               type="button"
                               onClick={() => navigate('/delivery')}
