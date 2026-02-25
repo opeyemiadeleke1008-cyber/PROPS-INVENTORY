@@ -2,7 +2,6 @@ import {
   BarChart3,
   Boxes,
   Home,
-  Package2,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -46,10 +45,7 @@ export default function Aside({ collapsed, onToggle }: AsideProps) {
     >
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-5">
         <div className="flex items-center gap-3 overflow-hidden">
-          <div className="rounded-lg bg-green-50 p-2 text-green-600">
-            <Package2 size={20} />
-          </div>
-          {!collapsed && <p className="text-2xl font-semibold leading-7 text-gray-900">Props Inventory</p>}
+          {!collapsed && <img src="/img/propsandshopslogo.png" alt="Props and Shops Logo" className="h-20 w-25" />}
         </div>
 
         <button

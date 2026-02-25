@@ -25,7 +25,33 @@ const orderSummary = (order: Order) => {
   return `${order.items[0].productName} +${order.items.length - 1} more`
 }
 
-const makeDocImage = (order: Order, kind: DocumentKind) => {
+let cachedDocLogo: HTMLImageElement | null = null
+let logoLoadPromise: Promise<HTMLImageElement> | null = null
+
+const getDocLogo = async () => {
+  if (cachedDocLogo) {
+    return cachedDocLogo
+  }
+
+  if (logoLoadPromise) {
+    return logoLoadPromise
+  }
+
+  logoLoadPromise = new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      cachedDocLogo = image
+      resolve(image)
+    }
+    image.onerror = () => reject(new Error('Could not load logo image'))
+    image.src = '/img/propsandshopslogo.png'
+    image.classList.add('w-25', 'h-20')
+  })
+
+  return logoLoadPromise
+}
+
+const makeDocImage = async (order: Order, kind: DocumentKind) => {
   const canvas = document.createElement('canvas')
   canvas.width = 1000
   canvas.height = 760
@@ -38,6 +64,12 @@ const makeDocImage = (order: Order, kind: DocumentKind) => {
   ctx.fillStyle = '#166534'
   ctx.font = '700 36px Arial'
   ctx.fillText(kind === 'invoice' ? 'INVOICE' : 'RECEIPT', 40, 60)
+  try {
+    const logo = await getDocLogo()
+    ctx.drawImage(logo, canvas.width - 220, 20, 180, 72)
+  } catch {
+    // Continue rendering without logo if image cannot be loaded.
+  }
 
   ctx.fillStyle = '#374151'
   ctx.font = '18px Arial'
@@ -76,8 +108,8 @@ const makeDocImage = (order: Order, kind: DocumentKind) => {
   return canvas.toDataURL('image/png')
 }
 
-const downloadImage = (order: Order, kind: DocumentKind) => {
-  const dataUrl = makeDocImage(order, kind)
+const downloadImage = async (order: Order, kind: DocumentKind) => {
+  const dataUrl = await makeDocImage(order, kind)
   if (!dataUrl) return
 
   const link = document.createElement('a')
@@ -319,10 +351,10 @@ export default function PurchaseOrders() {
     }
   }
 
-  const openPreview = (order: Order, kind: DocumentKind) => {
+  const openPreview = async (order: Order, kind: DocumentKind) => {
     setPreviewOrder(order)
     setPreviewKind(kind)
-    setPreviewImage(makeDocImage(order, kind))
+    setPreviewImage(await makeDocImage(order, kind))
   }
 
   return (
@@ -425,14 +457,18 @@ export default function PurchaseOrders() {
 
                           <button
                             type="button"
-                            onClick={() => openPreview(order, 'invoice')}
+                            onClick={() => {
+                              void openPreview(order, 'invoice')
+                            }}
                             className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
                           >
                             Create Invoice
                           </button>
                           <button
                             type="button"
-                            onClick={() => openPreview(order, 'receipt')}
+                            onClick={() => {
+                              void openPreview(order, 'receipt')
+                            }}
                             className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
                           >
                             Generate Receipt
@@ -597,7 +633,9 @@ export default function PurchaseOrders() {
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => downloadImage(previewOrder, previewKind)}
+                onClick={() => {
+                  void downloadImage(previewOrder, previewKind)
+                }}
                 className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
               >
                 Download {previewKind === 'invoice' ? 'Invoice' : 'Receipt'}
