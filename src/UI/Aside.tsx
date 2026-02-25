@@ -21,7 +21,7 @@ type AsideProps = {
 }
 
 const menuItems = [
-  { id: 'dashboard', label: 'Dashboard', icon: Home, to: '/' },
+  { id: 'dashboard', label: 'Dashboard', icon: Home, to: '/dashboard' },
   { id: 'products', label: 'Products', icon: Boxes, to: '/products' },
   { id: 'stock-movements', label: 'Stock Movements', icon: ArrowUpDown, to: '/stock-movements' },
   { id: 'purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, to: '/purchase-orders' },
@@ -35,7 +35,7 @@ export default function Aside({ collapsed, onToggle }: AsideProps) {
 
   const handleLogout = async () => {
     await signOut(auth)
-    navigate('/signin')
+    navigate('/')
   }
 
   return (

@@ -2,9 +2,11 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, Box, ShoppingCart, TriangleAlert } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import type { Product } from '../data/mockData'
 import { subscribeProducts } from '../data/inventoryStore'
 import { subscribeOrders, type Order } from '../data/orderStore'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 const money = (value: number) =>
   value.toLocaleString('en-NG', {
@@ -22,20 +24,23 @@ export default function Dashboard() {
   const navigate = useNavigate()
   const [products, setProducts] = useState<Product[]>([])
   const [orders, setOrders] = useState<Order[]>([])
+  const { isLoading, markReady } = usePageLoading(2, 2000)
 
   useEffect(() => {
     const unsubscribeProducts = subscribeProducts((productData) => {
       setProducts(productData)
+      markReady('products')
     })
     const unsubscribeOrders = subscribeOrders((orderData) => {
       setOrders(orderData)
+      markReady('orders')
     })
 
     return () => {
       unsubscribeProducts()
       unsubscribeOrders()
     }
-  }, [])
+  }, [markReady])
 
   const totalValue = products.reduce((sum, product) => sum + product.stock * product.cost, 0)
   const lowStock = products.filter((product) => product.stock > 0 && product.stock <= product.minStock)
@@ -44,7 +49,10 @@ export default function Dashboard() {
 
   return (
     <AppShell>
-      <div className="mx-auto max-w-6xl">
+      {isLoading ? (
+        <Loading />
+      ) : (
+        <div className="mx-auto max-w-6xl">
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-4xl font-bold tracking-tight">Dashboard</h1>
           <div className="flex items-center gap-3">
@@ -160,7 +168,8 @@ export default function Dashboard() {
             )}
           </article>
         </section>
-      </div>
+        </div>
+      )}
     </AppShell>
   )
 }

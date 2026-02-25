@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowLeft, Search, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
+import { FirebaseError } from 'firebase/app'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import type { Product } from '../data/mockData'
-import { addMovement, saveProducts, subscribeProducts } from '../data/inventoryStore'
+import { addMovement, addProduct, subscribeProducts } from '../data/inventoryStore'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 const formatMoney = (value: number) =>
   value.toLocaleString('en-NG', {
@@ -30,12 +33,17 @@ export default function Products() {
   const [minStock, setMinStock] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [variants, setVariants] = useState<string[]>([''])
+  const [restockProduct, setRestockProduct] = useState<Product | null>(null)
+  const [restockQty, setRestockQty] = useState('1')
+  const [toast, setToast] = useState('')
+  const { isLoading, markReady } = usePageLoading(1, 2000)
 
   useEffect(() => {
     return subscribeProducts((data) => {
       setProducts(data)
+      markReady('products')
     })
-  }, [])
+  }, [markReady])
 
   useEffect(() => {
     setShowAddPanel(searchParams.get('tab') === 'add')
@@ -139,28 +147,82 @@ export default function Products() {
       minStock: Number(minStock),
     }
 
-    const nextProducts = [nextProduct, ...products]
-    setProducts(nextProducts)
-    await saveProducts(nextProducts)
+    try {
+      await addProduct(nextProduct)
+      setProducts((current) => [nextProduct, ...current.filter((product) => product.id !== nextProduct.id)])
 
-    if (numericStock > 0) {
+      if (numericStock > 0) {
+        await addMovement({
+          id: crypto.randomUUID(),
+          date: new Date().toISOString().slice(0, 10),
+          type: 'IN',
+          productId: nextProduct.id,
+          productName: nextProduct.name,
+          sku: nextProduct.sku,
+          qty: numericStock,
+          note: 'Initial stock from add product',
+        })
+      }
+    } catch (error: unknown) {
+      if (error instanceof FirebaseError) {
+        setFormError(`Could not save product (${error.code}). Check Firebase rules.`)
+      } else {
+        setFormError('Could not save product to Firebase. Check connection/rules and try again.')
+      }
+      return
+    }
+
+    setToast('Product created successfully.')
+    window.setTimeout(() => setToast(''), 1500)
+    closeAddPanel()
+  }
+
+  const handleRestock = async () => {
+    if (!restockProduct) return
+
+    const qty = Number(restockQty)
+    if (!qty || qty < 1) {
+      setToast('Enter a valid quantity.')
+      window.setTimeout(() => setToast(''), 1500)
+      return
+    }
+
+    const updatedProduct: Product = {
+      ...restockProduct,
+      stock: restockProduct.stock + qty,
+    }
+
+    try {
+      await addProduct(updatedProduct)
+      setProducts((current) => current.map((product) => (product.id === updatedProduct.id ? updatedProduct : product)))
       await addMovement({
         id: crypto.randomUUID(),
         date: new Date().toISOString().slice(0, 10),
         type: 'IN',
-        productId: nextProduct.id,
-        productName: nextProduct.name,
-        sku: nextProduct.sku,
-        qty: numericStock,
-        note: 'Initial stock from add product',
+        productId: updatedProduct.id,
+        productName: updatedProduct.name,
+        sku: updatedProduct.sku,
+        qty,
+        note: 'Stock added to existing product',
       })
+    } catch {
+      setToast('Could not add stock. Try again.')
+      window.setTimeout(() => setToast(''), 1500)
+      return
     }
 
-    closeAddPanel()
+    setRestockProduct(null)
+    setRestockQty('1')
+    setToast('Stock added successfully.')
+    window.setTimeout(() => setToast(''), 1500)
   }
 
   return (
     <AppShell>
+      {isLoading ? (
+        <Loading />
+      ) : (
+        <>
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-4xl font-bold tracking-tight">Products</h1>
@@ -227,6 +289,7 @@ export default function Products() {
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3">Price</th>
                   <th className="px-4 py-3">Stock</th>
+                  <th className="px-4 py-3">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -242,6 +305,18 @@ export default function Products() {
                       <td className="px-4 py-3 text-sm">
                         <span className={isCritical ? 'text-red-600' : ''}>{product.stock}</span>
                         {(isLow || isCritical) && <TriangleAlert size={14} className="ml-1 inline text-amber-500" />}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRestockProduct(product)
+                            setRestockQty('1')
+                          }}
+                          className="rounded-md border border-green-300 px-3 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                        >
+                          Add Stock
+                        </button>
                       </td>
                     </tr>
                   )
@@ -418,6 +493,52 @@ export default function Products() {
             </form>
           </div>
         </div>
+      )}
+      {restockProduct && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5">
+            <h3 className="text-xl font-semibold">Add Stock</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              {restockProduct.name} ({restockProduct.sku})
+            </p>
+            <p className="mt-1 text-xs text-gray-500">Current stock: {restockProduct.stock}</p>
+
+            <label className="mt-4 block text-sm">
+              <span className="mb-1 block text-gray-600">Quantity to add</span>
+              <input
+                type="number"
+                min={1}
+                value={restockQty}
+                onChange={(event) => setRestockQty(event.target.value)}
+                className="w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
+              />
+            </label>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setRestockProduct(null)}
+                className="rounded-xl border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRestock()
+                }}
+                className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div className="fixed right-5 top-5 z-50 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
+      )}
+        </>
       )}
     </AppShell>
   )

@@ -27,22 +27,18 @@ export const getProducts = async () => {
 
 export const saveProducts = async (products: Product[]) => {
   const batch = writeBatch(db)
-  const snapshot = await getDocs(productsCollection)
-
-  const nextIds = new Set(products.map((item) => item.id))
-
-  snapshot.docs.forEach((item) => {
-    if (!nextIds.has(item.id)) {
-      batch.delete(item.ref)
-    }
-  })
 
   products.forEach((item) => {
     const { id, ...rest } = item
-    batch.set(doc(productsCollection, id), rest)
+    batch.set(doc(productsCollection, id), rest, { merge: true })
   })
 
   await batch.commit()
+}
+
+export const addProduct = async (product: Product) => {
+  const { id, ...rest } = product
+  await setDoc(doc(productsCollection, id), rest, { merge: true })
 }
 
 export const getMovements = async () => {
@@ -52,18 +48,10 @@ export const getMovements = async () => {
 
 export const saveMovements = async (movements: StockMovement[]) => {
   const batch = writeBatch(db)
-  const snapshot = await getDocs(movementsCollection)
-  const nextIds = new Set(movements.map((item) => item.id))
-
-  snapshot.docs.forEach((item) => {
-    if (!nextIds.has(item.id)) {
-      batch.delete(item.ref)
-    }
-  })
 
   movements.forEach((item) => {
     const { id, ...rest } = item
-    batch.set(doc(movementsCollection, id), rest)
+    batch.set(doc(movementsCollection, id), rest, { merge: true })
   })
 
   await batch.commit()

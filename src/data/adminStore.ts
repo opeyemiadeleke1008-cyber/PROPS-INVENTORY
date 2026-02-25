@@ -1,9 +1,9 @@
-import { collection, doc, getDocs, setDoc } from 'firebase/firestore'
+import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore'
 import { db } from '../firebase'
 
 const adminsCollection = collection(db, 'admins')
 
-const DEFAULT_ADMINS = ['opeyemidelek@outlook.com', 'admin2@example.com', 'admin3@example.com']
+export const DEFAULT_ADMINS = ['opeyemidelek@outlook.com', 'abuduadebusayo2019@gmail.com', 'Propsandshops@gmail.com']
 
 export const seedAdmins = async () => {
   const snapshot = await getDocs(adminsCollection)
@@ -22,4 +22,66 @@ export const seedAdmins = async () => {
 export const getAdminEmails = async () => {
   const snapshot = await getDocs(adminsCollection)
   return snapshot.docs.map((item) => item.id.toLowerCase())
+}
+
+export const isAllowedAdmin = async (email: string) => {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    return false
+  }
+
+  const adminDoc = await getDoc(doc(adminsCollection, normalizedEmail))
+  return adminDoc.exists()
+}
+
+export const touchAdminSignin = async (email: string, uid?: string) => {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    return
+  }
+
+  await setDoc(
+    doc(adminsCollection, normalizedEmail),
+    {
+      email: normalizedEmail,
+      uid: uid ?? null,
+      lastLoginAt: new Date().toISOString(),
+    },
+    { merge: true },
+  )
+}
+
+export const ensureAdminRecord = async (email: string) => {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    return
+  }
+
+  await setDoc(
+    doc(adminsCollection, normalizedEmail),
+    {
+      email: normalizedEmail,
+      createdAt: new Date().toISOString(),
+    },
+    { merge: true },
+  )
+}
+
+export const registerAdminAccount = async (email: string, uid: string) => {
+  const normalizedEmail = email.trim().toLowerCase()
+  if (!normalizedEmail) {
+    return
+  }
+
+  await setDoc(
+    doc(adminsCollection, normalizedEmail),
+    {
+      email: normalizedEmail,
+      uid,
+      registered: true,
+      registeredAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+    },
+    { merge: true },
+  )
 }

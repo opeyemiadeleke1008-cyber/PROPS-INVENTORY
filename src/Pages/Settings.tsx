@@ -1,21 +1,28 @@
 import { useEffect, useState } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import { auth } from '../firebase'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 export default function Settings() {
   const [adminEmail, setAdminEmail] = useState('Not logged in')
+  const { isLoading, markReady } = usePageLoading(1, 2000)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setAdminEmail(user?.email ?? 'Not logged in')
+      markReady('admin')
     })
 
     return () => unsubscribe()
-  }, [])
+  }, [markReady])
 
   return (
     <AppShell>
+      {isLoading ? (
+        <Loading />
+      ) : (
       <div className="mx-auto max-w-4xl">
         <header className="mb-5">
           <h1 className="text-4xl font-bold tracking-tight">Settings</h1>
@@ -68,6 +75,7 @@ export default function Settings() {
           </button>
         </section>
       </div>
+      )}
     </AppShell>
   )
 }

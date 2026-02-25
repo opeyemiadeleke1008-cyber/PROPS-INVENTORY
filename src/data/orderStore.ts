@@ -1,6 +1,8 @@
 import { collection, doc, getDocs, onSnapshot, setDoc, writeBatch } from 'firebase/firestore'
 import { db } from '../firebase'
 
+export type FulfillmentType = 'delivery' | 'pickup'
+
 export type Order = {
   id: string
   orderNumber: string
@@ -18,12 +20,17 @@ export type Order = {
   }>
   total: number
   orderDate: string
-  deliveryLocation: string
+  fulfillmentType: FulfillmentType
+  deliveryLocation?: string
   paid: boolean
   delivered: boolean
 }
 
 const ordersCollection = collection(db, 'orders')
+
+const stripUndefined = <T extends Record<string, unknown>>(value: T) => {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined))
+}
 
 const normalizeOrder = (order: Partial<Order> & Record<string, unknown>): Order => {
   const fallbackName =
@@ -86,7 +93,8 @@ const normalizeOrder = (order: Partial<Order> & Record<string, unknown>): Order 
     items: finalItems,
     total: finalItems.reduce((sum, item) => sum + item.lineTotal, Number(order.total ?? 0)),
     orderDate: String(order.orderDate ?? ''),
-    deliveryLocation: String(order.deliveryLocation ?? ''),
+    fulfillmentType: (order.fulfillmentType === 'pickup' ? 'pickup' : 'delivery') as FulfillmentType,
+    deliveryLocation: typeof order.deliveryLocation === 'string' ? order.deliveryLocation : undefined,
     paid: typeof order.paid === 'boolean' ? order.paid : false,
     delivered: typeof order.delivered === 'boolean' ? order.delivered : false,
   }
@@ -99,19 +107,10 @@ export const getOrders = async () => {
 
 export const saveOrders = async (orders: Order[]) => {
   const batch = writeBatch(db)
-  const snapshot = await getDocs(ordersCollection)
-
-  const nextIds = new Set(orders.map((item) => item.id))
-
-  snapshot.docs.forEach((item) => {
-    if (!nextIds.has(item.id)) {
-      batch.delete(item.ref)
-    }
-  })
 
   orders.forEach((item) => {
     const { id, ...rest } = item
-    batch.set(doc(ordersCollection, id), rest)
+    batch.set(doc(ordersCollection, id), stripUndefined(rest), { merge: true })
   })
 
   await batch.commit()
@@ -119,8 +118,11 @@ export const saveOrders = async (orders: Order[]) => {
 
 export const addOrder = async (order: Order) => {
   const { id, ...rest } = order
-  await setDoc(doc(ordersCollection, id), rest)
-  return getOrders()
+  await setDoc(doc(ordersCollection, id), stripUndefined(rest), { merge: true })
+}
+
+export const updateOrder = async (id: string, values: Partial<Omit<Order, 'id'>>) => {
+  await setDoc(doc(ordersCollection, id), stripUndefined(values), { merge: true })
 }
 
 export const subscribeOrders = (onChange: (orders: Order[]) => void) => {

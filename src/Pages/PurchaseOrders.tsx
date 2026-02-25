@@ -1,10 +1,14 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { CheckCircle2, Plus, ShoppingCart, Trash2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { FirebaseError } from 'firebase/app'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import type { Product } from '../data/mockData'
-import { addMovement, saveProducts, subscribeProducts } from '../data/inventoryStore'
-import { addOrder, saveOrders, subscribeOrders, type Order } from '../data/orderStore'
+import { createPendingDeliveryFromOrder, syncDeliveryPaidStatus } from '../data/deliveryStore'
+import { addMovement, addProduct, subscribeProducts } from '../data/inventoryStore'
+import { addOrder, subscribeOrders, type FulfillmentType, type Order, updateOrder } from '../data/orderStore'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 type DocumentKind = 'invoice' | 'receipt'
 type DraftItem = { productId: string; quantity: string }
@@ -44,7 +48,7 @@ const makeDocImage = (order: Order, kind: DocumentKind) => {
     ctx.fillText(`Email: ${order.receiverEmail}`, 40, 195)
   }
   ctx.fillText(`Date: ${order.orderDate}`, 40, 225)
-  ctx.fillText(`Delivery Location: ${order.deliveryLocation}`, 40, 255)
+  ctx.fillText(`Delivery Location: ${order.deliveryLocation ?? 'N/A'}`, 40, 255)
 
   ctx.strokeStyle = '#d1d5db'
   ctx.strokeRect(40, 285, 920, 380)
@@ -96,13 +100,17 @@ export default function PurchaseOrders() {
   const [receiverName, setReceiverName] = useState('')
   const [receiverPhone, setReceiverPhone] = useState('')
   const [receiverEmail, setReceiverEmail] = useState('')
+  const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('delivery')
   const [deliveryLocation, setDeliveryLocation] = useState('')
   const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', quantity: '1' }])
   const [formError, setFormError] = useState('')
+  const [toast, setToast] = useState('')
+  const { isLoading, markReady } = usePageLoading(2, 2000)
 
   useEffect(() => {
     const unsubscribeProducts = subscribeProducts((storedProducts) => {
       setProducts(storedProducts)
+      markReady('products')
       if (storedProducts.length > 0) {
         setDraftItems((current) => {
           if (current.length === 0 || !storedProducts.some((product) => product.id === current[0].productId)) {
@@ -115,13 +123,14 @@ export default function PurchaseOrders() {
 
     const unsubscribeOrders = subscribeOrders((storedOrders) => {
       setOrders(storedOrders)
+      markReady('orders')
     })
 
     return () => {
       unsubscribeProducts()
       unsubscribeOrders()
     }
-  }, [])
+  }, [markReady])
 
   const statusLabel = (order: Order) => {
     if (order.delivered) return 'Delivered'
@@ -151,8 +160,12 @@ export default function PurchaseOrders() {
   const handleCreateOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
 
-    if (!receiverName.trim() || !receiverPhone.trim() || !deliveryLocation.trim()) {
+    if (!receiverName.trim() || !receiverPhone.trim()) {
       setFormError('Please fill required fields.')
+      return
+    }
+    if (fulfillmentType === 'delivery' && !deliveryLocation.trim()) {
+      setFormError('Delivery location is required for delivery orders.')
       return
     }
 
@@ -215,62 +228,95 @@ export default function PurchaseOrders() {
       items: orderItems,
       total,
       orderDate: now.toISOString().slice(0, 10),
-      deliveryLocation: deliveryLocation.trim(),
+      fulfillmentType,
+      deliveryLocation: fulfillmentType === 'delivery' ? deliveryLocation.trim() : undefined,
       paid: false,
       delivered: false,
     }
 
-    const nextProducts = products.map((product) => {
-      const qty = quantityByProduct.get(product.id)
-      if (!qty) return product
-      return {
-        ...product,
-        stock: product.stock - qty,
+    try {
+      const changedProducts = products
+        .map((product) => {
+          const qty = quantityByProduct.get(product.id)
+          if (!qty) return null
+          return {
+            ...product,
+            stock: product.stock - qty,
+          }
+        })
+        .filter((item): item is Product => item !== null)
+
+      await Promise.all(changedProducts.map((product) => addProduct(product)))
+      setProducts((current) =>
+        current.map((product) => {
+          const next = changedProducts.find((changed) => changed.id === product.id)
+          return next ?? product
+        }),
+      )
+
+      for (const item of orderItems) {
+        await addMovement({
+          id: crypto.randomUUID(),
+          date: nextOrder.orderDate,
+          type: 'OUT',
+          productId: item.productId,
+          productName: item.productName,
+          sku: item.sku,
+          qty: item.quantity,
+          note: `Order sold to ${nextOrder.receiverName}`,
+        })
       }
-    })
 
-    await saveProducts(nextProducts)
-    setProducts(nextProducts)
-
-    for (const item of orderItems) {
-      await addMovement({
-        id: crypto.randomUUID(),
-        date: nextOrder.orderDate,
-        type: 'OUT',
-        productId: item.productId,
-        productName: item.productName,
-        sku: item.sku,
-        qty: item.quantity,
-        note: `Order sold to ${nextOrder.receiverName}`,
-      })
+      await addOrder(nextOrder)
+      setOrders((current) => [nextOrder, ...current.filter((order) => order.id !== nextOrder.id)])
+    } catch (error: unknown) {
+      if (error instanceof FirebaseError) {
+        setFormError(`Could not save order (${error.code}). Check Firebase rules.`)
+      } else {
+        setFormError('Could not save this order to Firebase. Check connection/rules and try again.')
+      }
+      return
     }
 
-    setOrders(await addOrder(nextOrder))
+    if (nextOrder.fulfillmentType === 'delivery') {
+      try {
+        await createPendingDeliveryFromOrder(nextOrder)
+      } catch (error: unknown) {
+        if (error instanceof FirebaseError) {
+          setToast(`Order saved, but delivery sync failed (${error.code}).`)
+        } else {
+          setToast('Order saved, but delivery sync failed.')
+        }
+        window.setTimeout(() => setToast(''), 1500)
+      }
+    }
+
     setReceiverName('')
     setReceiverPhone('')
     setReceiverEmail('')
+    setFulfillmentType('delivery')
     setDeliveryLocation('')
     setDraftItems([{ productId: products[0]?.id ?? '', quantity: '1' }])
     setFormError('')
     setShowCreateModal(false)
+    setToast('Order created successfully.')
+    window.setTimeout(() => setToast(''), 1500)
   }
 
   const togglePaid = async (id: string) => {
-    const next = orders.map((order) => {
-      if (order.id !== id || order.delivered) return order
-      return { ...order, paid: !order.paid }
-    })
-    setOrders(next)
-    await saveOrders(next)
-  }
+    const currentOrder = orders.find((order) => order.id === id)
+    if (!currentOrder || currentOrder.delivered) {
+      return
+    }
 
-  const markDelivered = async (id: string) => {
-    const next = orders.map((order) => {
-      if (order.id !== id || !order.paid) return order
-      return { ...order, delivered: true }
-    })
+    const targetOrder: Order = { ...currentOrder, paid: !currentOrder.paid }
+    const next = orders.map((order) => (order.id === id ? targetOrder : order))
     setOrders(next)
-    await saveOrders(next)
+
+    await updateOrder(id, { paid: targetOrder.paid })
+    if (targetOrder.fulfillmentType === 'delivery') {
+      await syncDeliveryPaidStatus(id, targetOrder.paid)
+    }
   }
 
   const openPreview = (order: Order, kind: DocumentKind) => {
@@ -281,6 +327,10 @@ export default function PurchaseOrders() {
 
   return (
     <AppShell>
+      {isLoading ? (
+        <Loading />
+      ) : (
+        <>
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-4xl font-bold tracking-tight">Orders</h1>
@@ -320,6 +370,7 @@ export default function PurchaseOrders() {
                     <th className="px-4 py-3">Order</th>
                     <th className="px-4 py-3">Receiver</th>
                     <th className="px-4 py-3">Items</th>
+                    <th className="px-4 py-3">Type</th>
                     <th className="px-4 py-3">Status</th>
                     <th className="px-4 py-3">Total</th>
                     <th className="px-4 py-3">Actions</th>
@@ -341,6 +392,9 @@ export default function PurchaseOrders() {
                         <p className="text-xs text-gray-500">{order.items.length} item(s)</p>
                       </td>
                       <td className="px-4 py-3 text-sm">
+                        {order.fulfillmentType === 'delivery' ? 'Delivery' : 'Pickup'}
+                      </td>
+                      <td className="px-4 py-3 text-sm">
                         <span className={`rounded-lg px-3 py-1 text-xs font-medium ${statusClass(order)}`}>{statusLabel(order)}</span>
                         {order.delivered && <CheckCircle2 size={15} className="ml-2 inline text-green-600" />}
                       </td>
@@ -359,15 +413,13 @@ export default function PurchaseOrders() {
                             {order.paid ? 'Mark Unpaid' : 'Mark Paid'}
                           </button>
 
-                          {order.paid && !order.delivered && (
+                          {order.fulfillmentType === 'delivery' && (
                             <button
                               type="button"
-                              onClick={() => {
-                                void markDelivered(order.id)
-                              }}
+                              onClick={() => navigate('/delivery')}
                               className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
                             >
-                              Delivered
+                              Open Delivery
                             </button>
                           )}
 
@@ -442,15 +494,29 @@ export default function PurchaseOrders() {
               </label>
 
               <label className="block text-sm">
-                <span className="mb-1 block text-gray-600">Delivery Location</span>
-                <input
-                  type="text"
-                  value={deliveryLocation}
-                  onChange={(event) => setDeliveryLocation(event.target.value)}
+                <span className="mb-1 block text-gray-600">Order Type</span>
+                <select
+                  value={fulfillmentType}
+                  onChange={(event) => setFulfillmentType(event.target.value as FulfillmentType)}
                   className="w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
-                  required
-                />
+                >
+                  <option value="delivery">Delivery</option>
+                  <option value="pickup">Pickup</option>
+                </select>
               </label>
+
+              {fulfillmentType === 'delivery' && (
+                <label className="block text-sm">
+                  <span className="mb-1 block text-gray-600">Delivery Location</span>
+                  <input
+                    type="text"
+                    value={deliveryLocation}
+                    onChange={(event) => setDeliveryLocation(event.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
+                    required
+                  />
+                </label>
+              )}
 
               <div className="rounded-xl border border-gray-200 p-3">
                 <div className="mb-2 flex items-center justify-between">
@@ -546,6 +612,11 @@ export default function PurchaseOrders() {
             </div>
           </div>
         </div>
+      )}
+      {toast && (
+        <div className="fixed right-5 top-5 z-50 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white shadow-lg">{toast}</div>
+      )}
+        </>
       )}
     </AppShell>
   )

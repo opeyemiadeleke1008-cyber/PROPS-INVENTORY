@@ -1,8 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createUserWithEmailAndPassword, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { FirebaseError } from 'firebase/app'
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth'
 import { auth } from '../firebase'
-import { getAdminEmails, seedAdmins } from '../data/adminStore'
+import {
+  DEFAULT_ADMINS,
+  getAdminEmails,
+  registerAdminAccount,
+  seedAdmins,
+  touchAdminSignin,
+} from '../data/adminStore'
 
 type AuthMode = 'signin' | 'signup'
 
@@ -12,6 +24,7 @@ export default function Signin() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [adminEmails, setAdminEmails] = useState<string[]>([])
+  const [isLoadingAdmins, setIsLoadingAdmins] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [currentAdmin, setCurrentAdmin] = useState<string | null>(null)
@@ -21,20 +34,35 @@ export default function Signin() {
     let unsubscribe: (() => void) | undefined
 
     const setup = async () => {
-      await seedAdmins()
-      const emails = await getAdminEmails()
-      if (mounted) {
-        setAdminEmails(emails)
+      try {
+        await seedAdmins()
+        const emails = await getAdminEmails()
+        if (mounted) {
+          setAdminEmails(emails)
+        }
+      } catch {
+        if (mounted) {
+          setError('Unable to load admin allowlist from Firebase. Check Firestore rules/connection.')
+        }
+      } finally {
+        if (mounted) {
+          setIsLoadingAdmins(false)
+        }
       }
 
       unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user?.email) {
           const normalized = user.email.toLowerCase()
-          const currentAllowedEmails = mounted ? emails : await getAdminEmails()
+          const allowed = DEFAULT_ADMINS.includes(normalized)
 
-          if (currentAllowedEmails.includes(normalized)) {
+          if (allowed) {
+            try {
+              await touchAdminSignin(normalized, user.uid)
+            } catch {
+              // Allow session to continue even if audit metadata write fails.
+            }
             setCurrentAdmin(normalized)
-            navigate('/')
+            navigate('/dashboard')
             return
           }
 
@@ -64,20 +92,48 @@ export default function Signin() {
       return
     }
 
-    if (!adminEmails.includes(normalizedEmail)) {
+    if (!DEFAULT_ADMINS.includes(normalizedEmail)) {
       setError('Access denied. This email is not on the admin allowlist.')
       setMessage('')
       return
     }
 
     try {
-      await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
+      try {
+        await touchAdminSignin(normalizedEmail, credential.user.uid)
+      } catch {
+        // Don't block login if Firestore metadata write fails.
+      }
       setError('')
       setMessage('Signed in successfully.')
       setPassword('')
-      navigate('/')
-    } catch {
-      setError('Invalid email or password.')
+      navigate('/dashboard')
+    } catch (signinError: unknown) {
+      if (signinError instanceof FirebaseError) {
+        if (
+          signinError.code === 'auth/user-not-found' ||
+          signinError.code === 'auth/wrong-password' ||
+          signinError.code === 'auth/invalid-credential' ||
+          signinError.code === 'auth/invalid-login-credentials'
+        ) {
+          setError('Invalid email or password.')
+          setMessage('')
+          return
+        }
+
+        if (signinError.code === 'auth/too-many-requests') {
+          setError('Too many attempts. Try again later.')
+          setMessage('')
+          return
+        }
+
+        setError(`Sign in failed (${signinError.code}).`)
+        setMessage('')
+        return
+      }
+
+      setError('Sign in failed. Please try again.')
       setMessage('')
     }
   }
@@ -91,21 +147,36 @@ export default function Signin() {
       return
     }
 
-    if (!adminEmails.includes(normalizedEmail)) {
+    if (!DEFAULT_ADMINS.includes(normalizedEmail)) {
       setError('Signup denied. This email is not on the admin allowlist.')
       setMessage('')
       return
     }
 
     try {
-      await createUserWithEmailAndPassword(auth, normalizedEmail, password)
-      await signOut(auth)
+      const credential = await createUserWithEmailAndPassword(auth, normalizedEmail, password)
+      await registerAdminAccount(normalizedEmail, credential.user.uid)
       setError('')
-      setMessage('Signup successful. You can now sign in.')
+      setMessage('Signup successful. Redirecting to dashboard...')
       setPassword('')
-      setMode('signin')
-    } catch {
-      setError('Signup failed. This admin may already be registered.')
+      navigate('/dashboard')
+    } catch (signupError: unknown) {
+      const isEmailInUse = signupError instanceof FirebaseError && signupError.code === 'auth/email-already-in-use'
+
+      if (isEmailInUse) {
+        setError('This admin is already registered. Please sign in.')
+        setMessage('')
+        setMode('signin')
+        return
+      }
+
+      if (signupError instanceof FirebaseError && signupError.code === 'auth/weak-password') {
+        setError('Password is too weak. Use at least 6 characters.')
+        setMessage('')
+        return
+      }
+
+      setError('Signup failed. Please try again.')
       setMessage('')
     }
   }
@@ -189,9 +260,10 @@ export default function Signin() {
 
         <button
           type="submit"
+          disabled={isLoadingAdmins}
           className="mt-3 rounded-md bg-green-600 p-2 text-sm font-semibold uppercase tracking-widest text-white transition-colors duration-200 hover:bg-green-700"
         >
-          {mode === 'signin' ? 'Sign In' : 'Sign Up'}
+          {isLoadingAdmins ? 'Loading Admins...' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
         </button>
 
         <button

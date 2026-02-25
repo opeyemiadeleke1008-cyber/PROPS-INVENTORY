@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import { subscribeOrders, type Order } from '../data/orderStore'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 const money = (value: number) =>
   value.toLocaleString('en-NG', {
@@ -10,12 +12,14 @@ const money = (value: number) =>
 
 export default function Reports() {
   const [orders, setOrders] = useState<Order[]>([])
+  const { isLoading, markReady } = usePageLoading(1, 2000)
 
   useEffect(() => {
     return subscribeOrders((data) => {
       setOrders(data)
+      markReady('orders')
     })
-  }, [])
+  }, [markReady])
 
   const salesByCategory = useMemo(
     () =>
@@ -39,6 +43,9 @@ export default function Reports() {
 
   return (
     <AppShell>
+      {isLoading ? (
+        <Loading />
+      ) : (
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-5">
           <h1 className="text-4xl font-bold tracking-tight">Reports</h1>
@@ -96,6 +103,7 @@ export default function Reports() {
           </>
         )}
       </div>
+      )}
     </AppShell>
   )
 }

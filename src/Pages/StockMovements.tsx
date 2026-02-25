@@ -2,8 +2,10 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { ArrowDownLeft, ArrowUpRight, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../UI/AppShell'
+import Loading from '../Components/Loading'
 import type { Product } from '../data/mockData'
 import { addMovement, saveProducts, subscribeMovements, subscribeProducts, type MovementType, type StockMovement } from '../data/inventoryStore'
+import { usePageLoading } from '../hooks/usePageLoading'
 
 export default function StockMovements() {
   const navigate = useNavigate()
@@ -15,6 +17,7 @@ export default function StockMovements() {
   const [quantity, setQuantity] = useState('1')
   const [note, setNote] = useState('')
   const [formError, setFormError] = useState('')
+  const { isLoading, markReady } = usePageLoading(2, 2000)
 
   useEffect(() => {
     const unsubscribeProducts = subscribeProducts((storedProducts) => {
@@ -22,17 +25,19 @@ export default function StockMovements() {
       if (storedProducts.length > 0 && !storedProducts.some((product) => product.id === productId)) {
         setProductId(storedProducts[0].id)
       }
+      markReady('products')
     })
 
     const unsubscribeMovements = subscribeMovements((storedMovements) => {
       setMovements(storedMovements)
+      markReady('movements')
     })
 
     return () => {
       unsubscribeProducts()
       unsubscribeMovements()
     }
-  }, [])
+  }, [markReady, productId])
 
   const selectedProduct = useMemo(() => products.find((product) => product.id === productId) ?? null, [products, productId])
 
@@ -87,6 +92,10 @@ export default function StockMovements() {
 
   return (
     <AppShell>
+      {isLoading ? (
+        <Loading />
+      ) : (
+        <>
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-4xl font-bold tracking-tight">Stock Movements</h1>
@@ -235,6 +244,8 @@ export default function StockMovements() {
             </form>
           </div>
         </div>
+      )}
+        </>
       )}
     </AppShell>
   )
