@@ -3,7 +3,7 @@ import { db } from '../firebase'
 
 const adminsCollection = collection(db, 'admins')
 
-export const DEFAULT_ADMINS = ['opeyemidelek@outlook.com', 'abuduadebusayo2019@gmail.com', 'Propsandshops@gmail.com']
+export const DEFAULT_ADMINS = ['opeyemidelek@outlook.com', 'abuduadebusayo2019@yahoo.com', 'Propsandshops@gmail.com']
 
 export const seedAdmins = async () => {
   const snapshot = await getDocs(adminsCollection)
