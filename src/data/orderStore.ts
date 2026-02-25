@@ -9,6 +9,7 @@ export type Order = {
   receiverName: string
   receiverPhone: string
   receiverEmail?: string
+  pickupCode?: string
   items: Array<{
     productId: string
     productName: string
@@ -90,6 +91,7 @@ const normalizeOrder = (order: Partial<Order> & Record<string, unknown>): Order 
     receiverName: fallbackName,
     receiverPhone: typeof order.receiverPhone === 'string' ? order.receiverPhone : 'N/A',
     receiverEmail: typeof order.receiverEmail === 'string' ? order.receiverEmail : undefined,
+    pickupCode: typeof order.pickupCode === 'string' ? order.pickupCode : undefined,
     items: finalItems,
     total: finalItems.reduce((sum, item) => sum + item.lineTotal, Number(order.total ?? 0)),
     orderDate: String(order.orderDate ?? ''),

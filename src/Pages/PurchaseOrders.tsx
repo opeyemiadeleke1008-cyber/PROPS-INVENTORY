@@ -134,6 +134,8 @@ export default function PurchaseOrders() {
   const [receiverEmail, setReceiverEmail] = useState('')
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('delivery')
   const [deliveryLocation, setDeliveryLocation] = useState('')
+  const [pickupCode, setPickupCode] = useState('')
+  const [pickupSearch, setPickupSearch] = useState('')
   const [draftItems, setDraftItems] = useState<DraftItem[]>([{ productId: '', quantity: '1' }])
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState('')
@@ -165,6 +167,7 @@ export default function PurchaseOrders() {
   }, [markReady])
 
   const statusLabel = (order: Order) => {
+    if (order.delivered && order.fulfillmentType === 'pickup') return 'Picked Up'
     if (order.delivered) return 'Delivered'
     if (order.paid) return 'Paid'
     return 'Pending'
@@ -175,6 +178,17 @@ export default function PurchaseOrders() {
     if (order.paid) return 'bg-emerald-100 text-emerald-700'
     return 'bg-amber-100 text-amber-700'
   }
+
+  const filteredOrders = orders.filter((order) => {
+    const query = pickupSearch.trim().toLowerCase()
+    if (!query) {
+      return true
+    }
+    if (order.fulfillmentType !== 'pickup') {
+      return false
+    }
+    return (order.pickupCode ?? '').toLowerCase().includes(query)
+  })
 
   const updateDraftItem = (index: number, value: Partial<DraftItem>) => {
     setDraftItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...value } : item)))
@@ -198,6 +212,10 @@ export default function PurchaseOrders() {
     }
     if (fulfillmentType === 'delivery' && !deliveryLocation.trim()) {
       setFormError('Delivery location is required for delivery orders.')
+      return
+    }
+    if (fulfillmentType === 'pickup' && !pickupCode.trim()) {
+      setFormError('Pickup code is required for pickup orders.')
       return
     }
 
@@ -257,6 +275,7 @@ export default function PurchaseOrders() {
       receiverName: receiverName.trim(),
       receiverPhone: receiverPhone.trim(),
       receiverEmail: receiverEmail.trim() || undefined,
+      pickupCode: fulfillmentType === 'pickup' ? pickupCode.trim().toUpperCase() : undefined,
       items: orderItems,
       total,
       orderDate: now.toISOString().slice(0, 10),
@@ -328,6 +347,7 @@ export default function PurchaseOrders() {
     setReceiverEmail('')
     setFulfillmentType('delivery')
     setDeliveryLocation('')
+    setPickupCode('')
     setDraftItems([{ productId: products[0]?.id ?? '', quantity: '1' }])
     setFormError('')
     setShowCreateModal(false)
@@ -351,6 +371,19 @@ export default function PurchaseOrders() {
     }
   }
 
+  const markPickedUp = async (id: string) => {
+    const currentOrder = orders.find((order) => order.id === id)
+    if (!currentOrder || currentOrder.fulfillmentType !== 'pickup' || currentOrder.delivered) {
+      return
+    }
+
+    const updatedOrder: Order = { ...currentOrder, delivered: true }
+    setOrders((current) => current.map((order) => (order.id === id ? updatedOrder : order)))
+    await updateOrder(id, { delivered: true })
+    setToast('Pickup completed.')
+    window.setTimeout(() => setToast(''), 1500)
+  }
+
   const openPreview = async (order: Order, kind: DocumentKind) => {
     setPreviewOrder(order)
     setPreviewKind(kind)
@@ -366,13 +399,22 @@ export default function PurchaseOrders() {
       <div className="mx-auto max-w-[1200px]">
         <header className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-4xl font-bold tracking-tight">Orders</h1>
-          <button
-            type="button"
-            onClick={() => setShowCreateModal(true)}
-            className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-          >
-            + Create Order
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={pickupSearch}
+              onChange={(event) => setPickupSearch(event.target.value)}
+              placeholder="Search pickup code..."
+              className="rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
+            />
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
+              className="rounded-xl bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+            >
+              + Create Order
+            </button>
+          </div>
         </header>
 
         {products.length === 0 && (
@@ -389,10 +431,10 @@ export default function PurchaseOrders() {
         )}
 
         <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
-          {orders.length === 0 ? (
+          {filteredOrders.length === 0 ? (
             <div className="flex min-h-[240px] flex-col items-center justify-center text-center">
               <ShoppingCart size={38} className="mb-3 text-gray-400" />
-              <p className="text-gray-500">No orders yet</p>
+              <p className="text-gray-500">{pickupSearch ? 'No pickup order found for this code' : 'No orders yet'}</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -409,7 +451,7 @@ export default function PurchaseOrders() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => (
+                  {filteredOrders.map((order) => (
                     <tr key={order.id} className="border-b border-gray-100 last:border-b-0">
                       <td className="px-4 py-3 text-sm">
                         <p className="font-medium">{order.orderNumber}</p>
@@ -425,6 +467,9 @@ export default function PurchaseOrders() {
                       </td>
                       <td className="px-4 py-3 text-sm">
                         {order.fulfillmentType === 'delivery' ? 'Delivery' : 'Pickup'}
+                        {order.fulfillmentType === 'pickup' && order.pickupCode && (
+                          <p className="mt-1 text-xs text-gray-500">Code: {order.pickupCode}</p>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm">
                         <span className={`rounded-lg px-3 py-1 text-xs font-medium ${statusClass(order)}`}>{statusLabel(order)}</span>
@@ -433,17 +478,27 @@ export default function PurchaseOrders() {
                       <td className="px-4 py-3 text-sm font-medium">{money(order.total)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void togglePaid(order.id)
-                            }}
-                            className={`rounded-lg border px-2 py-1 text-xs font-medium ${
-                              order.paid ? 'border-green-300 text-green-700 hover:bg-green-50' : 'border-amber-300 text-amber-700 hover:bg-amber-50'
-                            }`}
-                          >
-                            {order.paid ? 'Mark Unpaid' : 'Mark Paid'}
-                          </button>
+                          {order.delivered ? (
+                            <span
+                              className={`rounded-lg border px-2 py-1 text-xs font-medium ${
+                                order.paid ? 'border-green-300 text-green-700' : 'border-amber-300 text-amber-700'
+                              }`}
+                            >
+                              {order.paid ? 'Paid (Locked)' : 'Unpaid (Locked)'}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void togglePaid(order.id)
+                              }}
+                              className={`rounded-lg border px-2 py-1 text-xs font-medium ${
+                                order.paid ? 'border-green-300 text-green-700 hover:bg-green-50' : 'border-amber-300 text-amber-700 hover:bg-amber-50'
+                              }`}
+                            >
+                              {order.paid ? 'Mark Unpaid' : 'Mark Paid'}
+                            </button>
+                          )}
 
                           {order.fulfillmentType === 'delivery' && (
                             <button
@@ -454,25 +509,40 @@ export default function PurchaseOrders() {
                               Open Delivery
                             </button>
                           )}
+                          {order.fulfillmentType === 'pickup' && !order.delivered && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void markPickedUp(order.id)
+                              }}
+                              className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                            >
+                              Picked Up
+                            </button>
+                          )}
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void openPreview(order, 'invoice')
-                            }}
-                            className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
-                          >
-                            Create Invoice
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              void openPreview(order, 'receipt')
-                            }}
-                            className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
-                          >
-                            Generate Receipt
-                          </button>
+                          {!order.paid && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void openPreview(order, 'invoice')
+                              }}
+                              className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                            >
+                              Create Invoice
+                            </button>
+                          )}
+                          {order.paid && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void openPreview(order, 'receipt')
+                              }}
+                              className="rounded-lg border border-green-300 px-2 py-1 text-xs font-medium text-green-700 hover:bg-green-50"
+                            >
+                              Generate Receipt
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -549,6 +619,20 @@ export default function PurchaseOrders() {
                     value={deliveryLocation}
                     onChange={(event) => setDeliveryLocation(event.target.value)}
                     className="w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-green-600"
+                    required
+                  />
+                </label>
+              )}
+
+              {fulfillmentType === 'pickup' && (
+                <label className="block text-sm">
+                  <span className="mb-1 block text-gray-600">Pickup Code</span>
+                  <input
+                    type="text"
+                    value={pickupCode}
+                    onChange={(event) => setPickupCode(event.target.value)}
+                    className="w-full rounded-xl border border-gray-300 px-3 py-2 uppercase outline-none focus:border-green-600"
+                    placeholder="Enter pickup code"
                     required
                   />
                 </label>

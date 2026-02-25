@@ -42,7 +42,7 @@ export default function Dashboard() {
     }
   }, [markReady])
 
-  const totalValue = products.reduce((sum, product) => sum + product.stock * product.cost, 0)
+  const totalValue = orders.reduce((sum, order) => sum + order.total, 0)
   const lowStock = products.filter((product) => product.stock > 0 && product.stock <= product.minStock)
   const outOfStock = products.filter((product) => product.stock === 0)
   const pendingOrders = orders.filter((order) => !order.delivered)
@@ -75,7 +75,7 @@ export default function Dashboard() {
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-2xl border border-gray-200 bg-white p-5">
-            <p className="text-sm text-gray-600">Total Inventory Value</p>
+            <p className="text-sm text-gray-600">Total Sold Amount</p>
             <p className="mt-2 text-4xl font-semibold">{money(totalValue)}</p>
           </article>
 
