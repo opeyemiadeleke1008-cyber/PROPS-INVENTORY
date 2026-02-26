@@ -25,6 +25,7 @@ export default function Signin() {
   const [password, setPassword] = useState('')
   const [adminEmails, setAdminEmails] = useState<string[]>([])
   const [isLoadingAdmins, setIsLoadingAdmins] = useState(true)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [currentAdmin, setCurrentAdmin] = useState<string | null>(null)
@@ -99,6 +100,7 @@ export default function Signin() {
     }
 
     try {
+      setIsAuthenticating(true)
       const credential = await signInWithEmailAndPassword(auth, normalizedEmail, password)
       try {
         await touchAdminSignin(normalizedEmail, credential.user.uid)
@@ -135,6 +137,8 @@ export default function Signin() {
 
       setError('Sign in failed. Please try again.')
       setMessage('')
+    } finally {
+      setIsAuthenticating(false)
     }
   }
 
@@ -260,10 +264,10 @@ export default function Signin() {
 
         <button
           type="submit"
-          disabled={isLoadingAdmins}
+          disabled={isLoadingAdmins || isAuthenticating}
           className="mt-3 rounded-md bg-green-600 p-2 text-sm font-semibold uppercase tracking-widest text-white transition-colors duration-200 hover:bg-green-700"
         >
-          {isLoadingAdmins ? 'Loading Admins...' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
+          {isLoadingAdmins ? 'Loading Admins...' : isAuthenticating && mode === 'signin' ? 'Authenticating...' : mode === 'signin' ? 'Sign In' : 'Sign Up'}
         </button>
 
         <button
