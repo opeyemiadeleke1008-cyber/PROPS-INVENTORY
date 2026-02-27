@@ -7,12 +7,12 @@ export const DEFAULT_ADMINS = ['opeyemidelek@outlook.com', 'abuduadebusayo2019@y
 
 export const seedAdmins = async () => {
   const snapshot = await getDocs(adminsCollection)
-  const existing = new Set(snapshot.docs.map((item) => item.id.toLowerCase()))
+  const existing = new Set(snapshot.docs.map((item) => item.id))
 
   await Promise.all(
-    DEFAULT_ADMINS.filter((email) => !existing.has(email.toLowerCase())).map((email) =>
-      setDoc(doc(adminsCollection, email.toLowerCase()), {
-        email: email.toLowerCase(),
+    DEFAULT_ADMINS.filter((email) => !existing.has(email)).map((email) =>
+      setDoc(doc(adminsCollection, email), {
+        email,
         createdAt: new Date().toISOString(),
       }),
     ),
@@ -21,11 +21,11 @@ export const seedAdmins = async () => {
 
 export const getAdminEmails = async () => {
   const snapshot = await getDocs(adminsCollection)
-  return snapshot.docs.map((item) => item.id.toLowerCase())
+  return snapshot.docs.map((item) => item.id)
 }
 
 export const isAllowedAdmin = async (email: string) => {
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedEmail = email.trim()
   if (!normalizedEmail) {
     return false
   }
@@ -35,7 +35,7 @@ export const isAllowedAdmin = async (email: string) => {
 }
 
 export const touchAdminSignin = async (email: string, uid?: string) => {
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedEmail = email.trim()
   if (!normalizedEmail) {
     return
   }
@@ -52,7 +52,7 @@ export const touchAdminSignin = async (email: string, uid?: string) => {
 }
 
 export const ensureAdminRecord = async (email: string) => {
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedEmail = email.trim()
   if (!normalizedEmail) {
     return
   }
@@ -68,7 +68,7 @@ export const ensureAdminRecord = async (email: string) => {
 }
 
 export const registerAdminAccount = async (email: string, uid: string) => {
-  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedEmail = email.trim()
   if (!normalizedEmail) {
     return
   }

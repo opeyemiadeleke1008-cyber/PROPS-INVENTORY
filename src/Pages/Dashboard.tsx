@@ -74,15 +74,15 @@ export default function Dashboard() {
         </header>
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 border-l-3 border-l-green-600">
             <p className="text-sm text-gray-600">Total Sold Amount</p>
             <p className="mt-2 text-4xl font-semibold">{money(totalValue)}</p>
           </article>
 
-          <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 border-l-3 border-l-amber-600">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-sm text-gray-600">Low Stock Items</p>
+                <p className="text-sm text-gray-600 ">Low Stock Items</p>
                 <p className="mt-2 text-4xl font-semibold">{lowStock.length}</p>
               </div>
               <div className="rounded-xl bg-amber-100 p-3">
@@ -91,7 +91,7 @@ export default function Dashboard() {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 border-l-3 border-l-red-600">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm text-gray-600">Out of Stock</p>
@@ -103,7 +103,7 @@ export default function Dashboard() {
             </div>
           </article>
 
-          <article className="rounded-2xl border border-gray-200 bg-white p-5">
+          <article className="rounded-2xl border border-gray-200 bg-white p-5 border-l-3 border-l-blue-600">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-sm text-gray-600">Pending Orders</p>
